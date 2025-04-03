@@ -24,21 +24,43 @@ export default function AdminLogin() {
     setError('');
 
     try {
+      // Log the request we're about to make (for debugging)
+      console.log('Sending login request with:', { email });
+      
       const response = await fetch('/api/admin/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
+        credentials: 'include', // Important for cookies
       });
 
-      const data = await response.json();
+      console.log('Login response status:', response.status);
+      
+      // Parse response data, handle possible parsing errors
+      let data;
+      try {
+        const text = await response.text();
+        console.log('Response text:', text.substring(0, 150) + (text.length > 150 ? '...' : ''));
+        
+        try {
+          data = JSON.parse(text);
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+          throw new Error(`Failed to parse response: ${text.substring(0, 100)}`);
+        }
+      } catch (textError) {
+        console.error('Text extraction error:', textError);
+        throw new Error('Failed to read response data');
+      }
       
       if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
+        throw new Error(data?.error || 'Login failed');
       }
 
       // Login successful - redirect to admin dashboard
+      console.log('Login successful, redirecting...');
       router.push('/admin/blogs');
     } catch (err) {
       console.error('Login error:', err);

@@ -8,6 +8,7 @@ export async function POST(req: Request) {
     // Verify authentication
     const session = await getSession();
     if (!session) {
+      console.log('i am unauthorized here')
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
