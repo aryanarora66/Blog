@@ -1,3 +1,4 @@
+// api/admin/blogs/[id]/route.ts
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Blog from '@/models/Blog';

@@ -1,3 +1,4 @@
+// middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
@@ -5,14 +6,26 @@ export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isAdminPath = path.startsWith('/admin');
   const isLoginPath = path === '/admin/login';
+  const isApiPath = path.startsWith('/api/admin');
 
-  // Skip middleware for non-admin paths
-  if (!isAdminPath) return NextResponse.next();
+  // Skip middleware for non-admin and non-admin API paths
+  if (!isAdminPath && !isApiPath) {
+    return NextResponse.next();
+  }
 
-  const isAuthenticated = request.cookies.get('isAuthenticated')?.value === 'true';
+  const session = request.cookies.get('session')?.value;
+  const isAuthenticated = !!session;
+
+  // Handle API routes
+  if (isApiPath && !isAuthenticated) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
 
   // Redirect to login if not authenticated and not already on login page
-  if (!isAuthenticated && !isLoginPath) {
+  if (!isAuthenticated && !isLoginPath && isAdminPath) {
     return NextResponse.redirect(new URL('/admin/login', request.url));
   }
 
@@ -25,5 +38,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*'],
 };

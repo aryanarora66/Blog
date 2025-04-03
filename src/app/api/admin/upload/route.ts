@@ -1,10 +1,20 @@
 // app/api/admin/upload/route.ts
 import { NextResponse } from 'next/server';
-import { getAuthenticatedImageKit } from '@/lib/imagekit-auth';
+import { uploadToImageKit } from '@/lib/imagekit-auth';
+import { getSession } from '@/lib/auth';
 
 export async function POST(req: Request) {
   try {
-    const imagekit = await getAuthenticatedImageKit();
+    // Verify authentication
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Process form data
     const formData = await req.formData();
     const file = formData.get('file') as File;
 
@@ -15,14 +25,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const buffer = await file.arrayBuffer();
-    const result = await imagekit.upload({
-      file: Buffer.from(buffer),
-      fileName: `blog-${Date.now()}-${file.name}`,
-      folder: '/blog-images',
-    });
+    // Use the existing uploadToImageKit function
+    const url = await uploadToImageKit(file);
 
-    return NextResponse.json({ url: result.url });
+    return NextResponse.json({ url });
   } catch (error) {
     console.error('Image upload failed:', error);
     return NextResponse.json(

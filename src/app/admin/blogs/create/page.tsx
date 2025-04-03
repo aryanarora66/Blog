@@ -1,15 +1,18 @@
 // app/admin/blogs/create/page.tsx
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/apiClient';
+
 import dynamic from 'next/dynamic';
+import slugify from 'slugify';
+import { FaSpinner, FaUpload, FaExclamationTriangle, FaCheck, FaTimes, FaImage, FaNewspaper } from 'react-icons/fa';
+import { useImageUpload } from '@/app/hooks/useImageUpload';
 
 // Lazy load the rich text editor
 const RichTextEditor = dynamic(
   () => import('@/components/RichTextEditor'),
-  { ssr: false, loading: () => <p>Loading editor...</p> }
+  { ssr: false, loading: () => <div className="border rounded-md p-4 bg-gray-50">Loading editor...</div> }
 );
 
 export default function CreateBlog() {
@@ -27,19 +30,25 @@ export default function CreateBlog() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const { uploadImage, isUploading, progress } = useImageUpload();
+
+  // Auto-generate slug from title
+  useEffect(() => {
+    if (formData.title) {
+      const generatedSlug = slugify(formData.title, { lower: true, strict: true });
+      setFormData(prev => ({ ...prev, slug: generatedSlug }));
+    }
+  }, [formData.title]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value,
-      ...(name === 'title' && { 
-        slug: value.toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/(^-|-$)/g, '')
-      })
+      [name]: value
     }));
+    
     // Clear validation error when user types
     if (validationErrors[name]) {
       setValidationErrors(prev => {
@@ -52,9 +61,23 @@ export default function CreateBlog() {
 
   const handleContentChange = (content: string) => {
     setFormData(prev => ({ ...prev, content }));
+    
+    // Clear validation error
+    if (validationErrors.content) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.content;
+        return newErrors;
+      });
+    }
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: checked }));
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       // Validate image file
@@ -110,29 +133,48 @@ export default function CreateBlog() {
 
     setIsSubmitting(true);
     setError('');
+    setSuccess('');
 
     try {
       // Upload image if selected
       let coverImageUrl = formData.coverImage;
       if (imageFile) {
-        const { url } = await apiClient.uploadImage(imageFile);
-        coverImageUrl = url;
+        try {
+          const url = await uploadImage(imageFile);
+          coverImageUrl = url;
+        } catch (uploadError) {
+          throw new Error('Failed to upload image: ' + (uploadError instanceof Error ? uploadError.message : 'Unknown error'));
+        }
       }
 
       // Create blog with all data
-      await apiClient.createBlog({
-        ...formData,
-        coverImage: coverImageUrl,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+      const response = await fetch('/api/admin/blogs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...formData,
+          coverImage: coverImageUrl,
+          tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        }),
       });
 
-      // Show success notification
-      // (You can implement a toast notification system here)
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to create blog post');
+      }
+
+      setSuccess('Blog post created successfully!');
       
-      router.push('/admin/blogs');
+      // Redirect after a brief delay to show success message
+      setTimeout(() => {
+        router.push('/admin/blogs');
+      }, 1500);
     } catch (err) {
       console.error('Blog creation error:', err);
       setError(err instanceof Error ? err.message : 'Failed to create blog');
+      window.scrollTo(0, 0); // Scroll to top to show error
     } finally {
       setIsSubmitting(false);
     }
@@ -142,127 +184,173 @@ export default function CreateBlog() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">Create New Blog Post</h1>
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+            <FaNewspaper className="mr-3 text-blue-600" />
+            Create New Blog Post
+          </h1>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg p-6">
+      <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div className="bg-white shadow rounded-lg overflow-hidden">
           {error && (
-            <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-md">
-              {error}
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <FaExclamationTriangle className="h-5 w-5 text-red-500" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                Title *
-              </label>
-              <input
-                type="text"
-                id="title"
-                name="title"
-                value={formData.title}
-                onChange={handleChange}
-                className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                  validationErrors.title ? 'border-red-500' : ''
-                }`}
-              />
-              {validationErrors.title && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.title}</p>
-              )}
+          {success && (
+            <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <FaCheck className="h-5 w-5 text-green-500" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-green-700">{success}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Title */}
+              <div>
+                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  id="title"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleChange}
+                  className={`mt-1 block w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    validationErrors.title ? 'border-red-300' : 'border-gray-300'
+                  }`}
+                  placeholder="Enter blog title"
+                  disabled={isSubmitting}
+                />
+                {validationErrors.title && (
+                  <p className="mt-1 text-sm text-red-600">{validationErrors.title}</p>
+                )}
+              </div>
+
+              {/* Slug */}
+              <div>
+                <label htmlFor="slug" className="block text-sm font-medium text-gray-700">
+                  Slug *
+                </label>
+                <input
+                  type="text"
+                  id="slug"
+                  name="slug"
+                  value={formData.slug}
+                  onChange={handleChange}
+                  className={`mt-1 block w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                    validationErrors.slug ? 'border-red-300' : 'border-gray-300'
+                  }`}
+                  placeholder="your-blog-post-url"
+                  disabled={isSubmitting}
+                />
+                {validationErrors.slug && (
+                  <p className="mt-1 text-sm text-red-600">{validationErrors.slug}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  This will be used in the URL: /blogs/{formData.slug || 'your-blog-post-url'}
+                </p>
+              </div>
             </div>
 
+            {/* Cover Image */}
             <div>
-              <label htmlFor="slug" className="block text-sm font-medium text-gray-700">
-                Slug *
-              </label>
-              <input
-                type="text"
-                id="slug"
-                name="slug"
-                value={formData.slug}
-                onChange={handleChange}
-                className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                  validationErrors.slug ? 'border-red-500' : ''
-                }`}
-              />
-              {validationErrors.slug && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.slug}</p>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="coverImage" className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-gray-700">
                 Cover Image *
               </label>
-              <input
-                type="file"
-                id="coverImage"
-                name="coverImage"
-                onChange={handleImageChange}
-                accept="image/*"
-                className={`mt-1 block w-full text-sm text-gray-500
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-md file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-blue-50 file:text-blue-700
-                  hover:file:bg-blue-100 ${
-                    validationErrors.coverImage ? 'border-red-500' : ''
-                  }`}
-                disabled={isSubmitting}
-              />
+              
+              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md 
+                         hover:bg-gray-50 transition-colors duration-200
+                         ${validationErrors.coverImage ? 'border-red-300' : 'border-gray-300'}">
+                {imagePreview || formData.coverImage ? (
+                  <div className="space-y-3 text-center">
+                    <div className="h-40 mx-auto overflow-hidden rounded">
+                      <img 
+                        src={imagePreview || formData.coverImage} 
+                        alt="Cover preview" 
+                        className="h-full w-auto object-cover mx-auto"
+                      />
+                    </div>
+                    <div className="flex items-center justify-center text-sm">
+                      <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500">
+                        <span>Change image</span>
+                        <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleImageChange} disabled={isSubmitting || isUploading} />
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1 text-center">
+                    <FaImage className="mx-auto h-12 w-12 text-gray-400" />
+                    <div className="flex text-sm text-gray-600">
+                      <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500">
+                        <span>Upload a file</span>
+                        <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleImageChange} disabled={isSubmitting || isUploading} />
+                      </label>
+                      <p className="pl-1">or drag and drop</p>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      PNG, JPG, GIF up to 5MB
+                    </p>
+                  </div>
+                )}
+              </div>
+              
+              {isUploading && (
+                <div className="mt-2">
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${progress}%` }}></div>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 text-center">{progress}% Uploaded</p>
+                </div>
+              )}
+              
               {validationErrors.coverImage && (
                 <p className="mt-1 text-sm text-red-600">{validationErrors.coverImage}</p>
               )}
-              {(imagePreview || formData.coverImage) && (
-                <div className="mt-4">
-                  <h3 className="text-sm font-medium text-gray-700">Preview:</h3>
-                  <img 
-                    src={imagePreview || formData.coverImage} 
-                    alt="Cover preview" 
-                    className="mt-2 h-48 w-full object-cover rounded-md border"
-                  />
-                </div>
-              )}
             </div>
 
+            {/* Excerpt */}
             <div>
               <label htmlFor="excerpt" className="block text-sm font-medium text-gray-700">
                 Excerpt *
               </label>
+              <p className="mt-1 text-xs text-gray-500">
+                A brief summary of the blog post (will be shown in listings)
+              </p>
               <textarea
                 id="excerpt"
                 name="excerpt"
                 rows={3}
                 value={formData.excerpt}
                 onChange={handleChange}
-                className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 ${
-                  validationErrors.excerpt ? 'border-red-500' : ''
+                className={`mt-1 block w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+                  validationErrors.excerpt ? 'border-red-300' : 'border-gray-300'
                 }`}
+                placeholder="Write a brief summary of your blog post..."
+                disabled={isSubmitting}
               />
               {validationErrors.excerpt && (
                 <p className="mt-1 text-sm text-red-600">{validationErrors.excerpt}</p>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Content *
-              </label>
-              <RichTextEditor
-                value={formData.content}
-                onChange={handleContentChange}
-                className={`mt-1 ${
-                  validationErrors.content ? 'border-red-500 rounded-md border' : ''
-                }`}
-              />
-              {validationErrors.content && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.content}</p>
-              )}
-            </div>
-
+            {/* Tags */}
             <div>
               <label htmlFor="tags" className="block text-sm font-medium text-gray-700">
                 Tags (comma separated)
@@ -273,48 +361,72 @@ export default function CreateBlog() {
                 name="tags"
                 value={formData.tags}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 placeholder="e.g., technology, web development, nextjs"
+                disabled={isSubmitting}
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Separate tags with commas
+              </p>
             </div>
 
+            {/* Content / Rich Text Editor */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Content *
+              </label>
+              <RichTextEditor
+                value={formData.content}
+                onChange={handleContentChange}
+                className={`${validationErrors.content ? 'border-red-300' : ''}`}
+              />
+              {validationErrors.content && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.content}</p>
+              )}
+            </div>
+
+            {/* Published Status */}
             <div className="flex items-center">
               <input
                 type="checkbox"
                 id="published"
                 name="published"
                 checked={formData.published}
-                onChange={(e) => setFormData(prev => ({ ...prev, published: e.target.checked }))}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                onChange={handleCheckboxChange}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                disabled={isSubmitting}
               />
               <label htmlFor="published" className="ml-2 block text-sm text-gray-700">
                 Publish immediately
               </label>
+              <p className="ml-2 text-xs text-gray-500">
+                (Uncheck to save as draft)
+              </p>
             </div>
 
-            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+            {/* Action Buttons */}
+            <div className="flex justify-end pt-5 border-t border-gray-200">
               <button
                 type="button"
                 onClick={() => router.push('/admin/blogs')}
+                className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mr-3"
                 disabled={isSubmitting}
-                className="inline-flex justify-center rounded-md border border-gray-300 bg-white py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+                disabled={isSubmitting || isUploading}
+                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <FaSpinner className="animate-spin -ml-1 mr-2 h-5 w-5" />
                     Creating...
                   </>
-                ) : 'Create Blog'}
+                ) : (
+                  'Create Blog Post'
+                )}
               </button>
             </div>
           </form>

@@ -1,18 +1,25 @@
-// hooks/useImageUpload.ts
+// app/hooks/useImageUpload.ts
 import { useState } from 'react';
-import { getSession } from "@/lib/auth";
 
 export function useImageUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = async (file: File): Promise<string> => {
     setIsUploading(true);
     setError(null);
     setProgress(0);
 
     try {
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          const newProgress = prev + 5;
+          return newProgress < 90 ? newProgress : prev;
+        });
+      }, 100);
+
       const formData = new FormData();
       formData.append('file', file);
 
@@ -21,11 +28,15 @@ export function useImageUpload() {
         body: formData,
       });
 
+      clearInterval(progressInterval);
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Upload failed');
+        // Try to get error message from response
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Upload failed with status: ${response.status}`);
       }
 
+      setProgress(100);
       const { url } = await response.json();
       return url;
     } catch (err) {

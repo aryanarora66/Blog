@@ -1,3 +1,4 @@
+// co-founder/page.tsx
 "use client"
 import CoFounderHero from "@/components/co-founder/CoFounderHero";
 import WhyCoFounderMatters from "@//components/co-founder/WhyCoFounderMatters";
