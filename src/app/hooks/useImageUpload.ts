@@ -23,22 +23,35 @@ export function useImageUpload() {
       const formData = new FormData();
       formData.append('file', file);
 
+      console.log('Starting file upload...');
+
       const response = await fetch('/api/admin/upload', {
         method: 'POST',
         body: formData,
+        credentials: 'include', // Important! This ensures cookies are sent
       });
 
       clearInterval(progressInterval);
 
+      console.log('Upload response status:', response.status);
+
+      // Parse response data
+      let data;
+      try {
+        const text = await response.text();
+        console.log('Response preview:', text.substring(0, 150) + (text.length > 150 ? '...' : ''));
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error('Failed to parse server response');
+      }
+
       if (!response.ok) {
-        // Try to get error message from response
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Upload failed with status: ${response.status}`);
+        throw new Error(data?.error || `Upload failed with status: ${response.status}`);
       }
 
       setProgress(100);
-      const { url } = await response.json();
-      return url;
+      return data.url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
       throw err;
