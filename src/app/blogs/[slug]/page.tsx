@@ -1,4 +1,4 @@
-// app/blogs/[slug]/page.tsx
+// src/app/blogs/[slug]/page.tsx
 import { FaClock, FaTags, FaUser } from 'react-icons/fa';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -18,23 +18,34 @@ async function getBlog(slug: string) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
                  (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '');
   
-  const res = await fetch(`${baseUrl}/api/blogs/${slug}`, {
-    cache: 'no-store',
-  });
-  
-  if (res.status === 404) {
+  try {
+    const res = await fetch(`${baseUrl}/api/blogs/${slug}`, {
+      cache: 'no-store',
+    });
+    
+    if (res.status === 404) {
+      return null;
+    }
+    
+    if (!res.ok) {
+      throw new Error(`Failed to fetch blog: ${res.status}`);
+    }
+    
+    return res.json();
+  } catch (error) {
+    console.error(`Error fetching blog with slug ${slug}:`, error);
     return null;
   }
-  
-  if (!res.ok) {
-    throw new Error('Failed to fetch blog');
-  }
-  
-  return res.json();
 }
 
 export default async function BlogDetail({ params }: { params: { slug: string } }) {
-  const blog: BlogPost | null = await getBlog(params.slug);
+  // Make sure params.slug is a string
+  const slug = params.slug;
+  if (typeof slug !== 'string') {
+    notFound();
+  }
+  
+  const blog: BlogPost | null = await getBlog(slug);
   
   if (!blog) {
     notFound();

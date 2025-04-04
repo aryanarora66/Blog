@@ -1,4 +1,4 @@
-// app/blogs/[slug]/not-found.tsx
+// src/app/blogs/[slug]/not-found.tsx
 import Link from 'next/link';
 import { FaExclamationTriangle, FaArrowLeft } from 'react-icons/fa';
 

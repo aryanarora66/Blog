@@ -1,4 +1,4 @@
-// app/blogs/page.tsx
+// src/app/blogs/page.tsx
 import Link from 'next/link';
 import { FaClock, FaTags } from 'react-icons/fa';
 
@@ -17,15 +17,21 @@ async function getBlogs() {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
                  (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '');
   
-  const res = await fetch(`${baseUrl}/api/blogs`, {
-    cache: 'no-store', // Don't cache this request
-  });
-  
-  if (!res.ok) {
-    throw new Error('Failed to fetch blogs');
+  try {
+    const res = await fetch(`${baseUrl}/api/blogs`, {
+      cache: 'no-store', // Don't cache this request
+    });
+    
+    if (!res.ok) {
+      console.error(`Failed to fetch blogs: ${res.status}`);
+      return [];
+    }
+    
+    return res.json();
+  } catch (error) {
+    console.error('Error fetching blogs:', error);
+    return [];
   }
-  
-  return res.json();
 }
 
 export default async function BlogList() {

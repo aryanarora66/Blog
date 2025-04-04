@@ -1,4 +1,4 @@
-// app/api/admin/upload/route.ts
+// src/app/api/admin/upload/route.ts
 import { NextResponse } from 'next/server';
 import ImageKit from 'imagekit';
 import { cookies } from 'next/headers';

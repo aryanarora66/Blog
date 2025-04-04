@@ -1,4 +1,4 @@
-// app/api/admin/login/route.ts
+// src/app/api/admin/login/route.ts
 import { NextResponse } from 'next/server';
 import { createSession } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
