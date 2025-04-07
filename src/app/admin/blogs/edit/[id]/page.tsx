@@ -2,9 +2,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { FaArrowLeft, FaSpinner, FaExclamationTriangle, FaCheck, FaCalendarAlt, FaNewspaper } from 'react-icons/fa';
+import { FaArrowLeft, FaSpinner, FaExclamationTriangle, FaCheck, FaCalendarAlt, FaNewspaper, FaImage } from 'react-icons/fa';
 import { useImageUpload } from '@/app/hooks/useImageUpload';
 
 // Lazy load the rich text editor
@@ -25,11 +25,10 @@ interface BlogFormData {
   createdAt?: string;
 }
 
-export default function EditBlog() {
+export default function EditBlog({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const params = useParams();
-  const blogId = params.id as string;
-  
+  const blogId = params.id;
+
   const [formData, setFormData] = useState<BlogFormData>({
     title: '',
     slug: '',
@@ -39,8 +38,10 @@ export default function EditBlog() {
     tags: '',
     published: false
   });
+  
   const [originalData, setOriginalData] = useState<BlogFormData | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -48,11 +49,17 @@ export default function EditBlog() {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const { uploadImage, isUploading, progress } = useImageUpload();
 
+  // Fetch blog data when component mounts
   useEffect(() => {
     const fetchBlog = async () => {
       try {
         setIsLoading(true);
+        setError(null);
+
+        console.log(`Fetching blog with ID: ${blogId}`);
+        
         const response = await fetch(`/api/admin/blogs/${blogId}`);
+        console.log('Fetch response status:', response.status);
         
         if (!response.ok) {
           if (response.status === 401) {
@@ -62,11 +69,14 @@ export default function EditBlog() {
           if (response.status === 404) {
             throw new Error('Blog post not found');
           }
-          throw new Error('Failed to load blog data');
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
         }
         
+        // Parse response to get blog data
         const blog = await response.json();
+        console.log('Blog data retrieved:', blog);
         
+        // Format data for the form
         const formattedBlog = {
           ...blog,
           tags: Array.isArray(blog.tags) ? blog.tags.join(', ') : ''
@@ -75,14 +85,16 @@ export default function EditBlog() {
         setFormData(formattedBlog);
         setOriginalData(formattedBlog);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load blog data');
         console.error('Error fetching blog:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load blog data');
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchBlog();
+    if (blogId) {
+      fetchBlog();
+    }
   }, [blogId, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -141,6 +153,15 @@ export default function EditBlog() {
       }
 
       setImageFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+
+      // Clear validation errors
       setValidationErrors(prev => {
         const newErrors = { ...prev };
         delete newErrors.coverImage;
@@ -165,26 +186,46 @@ export default function EditBlog() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
     setSuccess(null);
 
     try {
+      console.log(`Updating blog with ID: ${blogId}`);
+
       // Upload new image if selected
       let coverImageUrl = formData.coverImage;
       if (imageFile) {
         try {
+          console.log('Uploading new image...');
           const url = await uploadImage(imageFile);
           coverImageUrl = url;
+          console.log('Image uploaded successfully:', url);
         } catch (uploadError) {
+          console.error('Image upload error:', uploadError);
           throw new Error('Failed to upload image: ' + (uploadError instanceof Error ? uploadError.message : 'Unknown error'));
         }
       }
 
       // Extract tags from string
-      const tags = formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const tags = formData.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean);
+
+      // Prepare data for API
+      const updateData = {
+        ...formData,
+        coverImage: coverImageUrl,
+        tags
+      };
+
+      console.log('Sending update data:', updateData);
 
       // Update blog with all data
       const response = await fetch(`/api/admin/blogs/${blogId}`, {
@@ -192,22 +233,23 @@ export default function EditBlog() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...formData,
-          coverImage: coverImageUrl,
-          tags
-        }),
+        body: JSON.stringify(updateData),
+        credentials: 'include', // Important for authentication cookies
       });
 
+      console.log('Update response status:', response.status);
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to update blog post');
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to update blog (${response.status})`);
       }
+
+      const updatedBlog = await response.json();
+      console.log('Blog updated successfully:', updatedBlog);
 
       setSuccess('Blog post updated successfully!');
       
-      // Reload the data to show the updated values
-      const updatedBlog = await response.json();
+      // Update form data with the response
       setFormData({
         ...updatedBlog,
         tags: Array.isArray(updatedBlog.tags) ? updatedBlog.tags.join(', ') : ''
@@ -362,25 +404,30 @@ export default function EditBlog() {
                 Cover Image *
               </label>
               
-              {formData.coverImage && (
+              {(formData.coverImage || imagePreview) && (
                 <div className="mb-3 relative">
                   <img 
-                    src={formData.coverImage} 
-                    alt="Current cover" 
+                    src={imagePreview || formData.coverImage}
+                    alt="Cover" 
                     className="h-40 object-cover rounded"
                   />
                 </div>
               )}
               
-              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:bg-gray-50">
                 <div className="space-y-1 text-center">
-                  <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4h-12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  <FaImage className="mx-auto h-12 w-12 text-gray-400" />
                   <div className="flex text-sm text-gray-600">
                     <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus:outline-none">
-                      <span>Upload a file</span>
-                      <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleImageChange} />
+                      <span>{formData.coverImage ? 'Replace image' : 'Upload a file'}</span>
+                      <input 
+                        id="file-upload" 
+                        name="file-upload" 
+                        type="file" 
+                        className="sr-only" 
+                        onChange={handleImageChange}
+                        disabled={isSubmitting || isUploading}
+                      />
                     </label>
                     <p className="pl-1">or drag and drop</p>
                   </div>
@@ -393,21 +440,13 @@ export default function EditBlog() {
               {isUploading && (
                 <div className="mt-2">
                   <div className="relative pt-1">
-                    <div className="flex mb-2 items-center justify-between">
-                      <div>
-                        <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
-                          Uploading
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-semibold inline-block text-blue-600">
-                          {progress}%
-                        </span>
-                      </div>
-                    </div>
                     <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-200">
-                      <div style={{ width: `${progress}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"></div>
+                      <div 
+                        style={{ width: `${progress}%` }} 
+                        className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                      ></div>
                     </div>
+                    <p className="text-xs text-gray-500 text-center">{progress}% Uploaded</p>
                   </div>
                 </div>
               )}
