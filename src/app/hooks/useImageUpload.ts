@@ -28,7 +28,7 @@ export function useImageUpload() {
       const response = await fetch('/api/admin/upload', {
         method: 'POST',
         body: formData,
-        credentials: 'include', // Important! This ensures cookies are sent
+        credentials: 'include', // sending cookies [cookies , auth]
       });
 
       clearInterval(progressInterval);
@@ -60,5 +60,5 @@ export function useImageUpload() {
     }
   };
 
-  return { uploadImage, isUploading, error, progress };
+  return { uploadImage, isUploading, error, progress }; 
 }
